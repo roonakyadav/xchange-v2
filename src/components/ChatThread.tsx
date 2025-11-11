@@ -47,7 +47,45 @@ export default function ChatThread({ chatId }: ChatThreadProps) {
         isVideo: false
     })
     const messagesEndRef = useRef<HTMLDivElement>(null)
-    const inputRef = useRef<HTMLTextAreaElement>(null)
+    const inputRef = useRef<HTMLInputElement>(null)
+    const messagesContainerRef = useRef<HTMLDivElement>(null)
+    const [isNearBottom, setIsNearBottom] = useState(true)
+    const [shouldAutoScroll, setShouldAutoScroll] = useState(true)
+
+    // Track if user is near bottom of messages
+    const handleScroll = useCallback(() => {
+        const container = messagesContainerRef.current
+        if (!container) return
+
+        const { scrollTop, scrollHeight, clientHeight } = container
+        const distanceFromBottom = scrollHeight - scrollTop - clientHeight
+        const isNearBottomNow = distanceFromBottom < 100 // Within 100px of bottom
+
+        setIsNearBottom(isNearBottomNow)
+
+        // If user scrolls up, disable auto-scroll until they scroll back down
+        if (!isNearBottomNow && shouldAutoScroll) {
+            setShouldAutoScroll(false)
+        } else if (isNearBottomNow && !shouldAutoScroll) {
+            setShouldAutoScroll(true)
+        }
+    }, [shouldAutoScroll])
+
+    // Auto-scroll only when user sends a message (not on incoming messages)
+    const scrollToBottom = () => {
+        if (messagesEndRef.current) {
+            messagesEndRef.current.scrollIntoView({ behavior: 'smooth' })
+        }
+    }
+
+    // Add scroll event listener
+    useEffect(() => {
+        const container = messagesContainerRef.current;
+        if (container) {
+            container.addEventListener('scroll', handleScroll);
+            return () => container.removeEventListener('scroll', handleScroll);
+        }
+    }, [handleScroll]);
     const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
     const messageChannelsRef = useRef<RealtimeChannel[]>([])
 
@@ -62,13 +100,7 @@ export default function ChatThread({ chatId }: ChatThreadProps) {
         return () => window.removeEventListener('resize', checkMobile)
     }, [])
 
-    // Auto-scroll to bottom when new messages arrive
-    useEffect(() => {
-        const container = document.getElementById('chat-scroll-area')
-        if (container) {
-            container.scrollTop = container.scrollHeight
-        }
-    }, [messages])
+
 
 
 
@@ -157,9 +189,7 @@ export default function ChatThread({ chatId }: ChatThreadProps) {
         return () => window.removeEventListener('chat-deleted', handleChatDeleted as EventListener)
     }, [chatId])
 
-    const scrollToBottom = () => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-    }
+
 
     const handleTyping = useCallback(() => {
         if (!isTyping) {
@@ -330,9 +360,9 @@ export default function ChatThread({ chatId }: ChatThreadProps) {
     const otherUser = chat.user1 === user.username ? chat.user2 : chat.user1
 
     return (
-        <div className="flex flex-col h-full bg-[#0b0b0b]">
+        <div className="flex flex-col h-full bg-black">
             {/* Header */}
-            <div className="p-6 border-b border-gray-800/50 bg-[#0b0b0b]/80 backdrop-blur-xl">
+            <div className="sticky top-0 z-10 bg-black border-b border-gray-800 p-4">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-4">
                         {/* Avatar */}
@@ -343,7 +373,7 @@ export default function ChatThread({ chatId }: ChatThreadProps) {
                                 </span>
                             </div>
                             {/* Online indicator */}
-                            <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-[#0b0b0b]"></div>
+                            <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-black"></div>
                         </div>
 
                         {/* User Info */}
@@ -377,10 +407,11 @@ export default function ChatThread({ chatId }: ChatThreadProps) {
                 </div>
             </div>
 
-            {/* Messages Area */}
+            {/* Scrollable Messages */}
             <div
-                id="chat-scroll-area"
-                className="flex-1 overflow-y-auto px-3 py-2 space-y-3 md:px-6 md:py-4 scroll-smooth"
+                ref={messagesContainerRef}
+                id="messages-container"
+                className="flex-1 overflow-y-auto px-4 py-3 space-y-3 scroll-smooth"
             >
                 {/* Messages */}
                 <AnimatePresence>
@@ -469,11 +500,11 @@ export default function ChatThread({ chatId }: ChatThreadProps) {
                     </motion.div>
                 )}
 
-
+                <div ref={messagesEndRef} />
             </div>
 
-            {/* Message Composer */}
-            <div className={`fixed bottom-0 ${isMobile ? 'left-0' : 'left-[340px]'} right-0 bg-[#0b0b0b] border-t border-gray-800 px-6 py-4 z-10`}>
+            {/* Input Bar */}
+            <div className="sticky bottom-0 bg-black border-t border-gray-800 p-3 flex items-center gap-2">
                 {/* Upload Progress */}
                 {uploading && (
                     <div className="mb-4 flex items-center space-x-3 text-gray-400">
@@ -487,67 +518,45 @@ export default function ChatThread({ chatId }: ChatThreadProps) {
                     </div>
                 )}
 
-                <form onSubmit={handleSendMessage} className="flex items-end gap-3">
-                    {/* Attachment Button */}
-                    <label className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-full bg-[#141414] hover:bg-[#1a1a1a] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
-                        {uploading ? (
-                            <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
-                        ) : (
-                            <Plus className="w-5 h-5 text-gray-400 hover:text-white" />
-                        )}
-                        <input
-                            type="file"
-                            accept="image/*,video/*"
-                            onChange={handleFileSelect}
-                            className="hidden"
-                            disabled={uploading}
-                        />
-                    </label>
-
-                    {/* Message Input */}
-                    <textarea
-                        ref={inputRef}
-                        value={newMessage}
-                        onChange={(e) => {
-                            setNewMessage(e.target.value)
-                            handleTyping()
-
-                            // Auto-resize textarea
-                            const target = e.target as HTMLTextAreaElement
-                            target.style.height = 'auto'
-                            target.style.height = `${Math.min(target.scrollHeight, 120)}px`
-                        }}
-                        onKeyDown={handleKeyDown}
-                        placeholder={`Message @${otherUser}...`}
-                        className="flex-1 resize-none bg-[#141414] text-gray-200 placeholder-gray-500 rounded-2xl px-4 py-3 focus:outline-none focus:ring-1 focus:ring-red-500 min-h-[44px] max-h-[120px] overflow-hidden shadow-inner"
-                        rows={1}
-                        disabled={sending || uploading}
-                        style={{ height: '44px' }}
+                <button type="button" className="p-2 rounded-full hover:bg-gray-900 transition">
+                    <Plus className="w-5 h-5 text-gray-400" />
+                    <input
+                        type="file"
+                        accept="image/*,video/*"
+                        onChange={handleFileSelect}
+                        className="hidden"
+                        disabled={uploading}
                     />
-
-                    {/* Send Button */}
-                    <motion.button
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        type="submit"
-                        disabled={!newMessage.trim() || sending || uploading}
-                        className={`h-10 px-6 rounded-2xl font-medium transition-all ${newMessage.trim() && !sending && !uploading
-                            ? 'bg-gradient-to-r from-red-600 to-pink-500 text-white shadow-lg hover:shadow-xl hover:opacity-90'
-                            : 'bg-gray-800 text-gray-600 cursor-not-allowed'
-                            }`}
-                    >
-                        {sending ? (
-                            <Loader2 className="w-5 h-5 animate-spin" />
-                        ) : (
-                            <span className="hidden sm:inline">Send</span>
-                        )}
-                        {!sending && (
-                            <svg className="w-5 h-5 sm:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                            </svg>
-                        )}
-                    </motion.button>
-                </form>
+                </button>
+                <input
+                    ref={inputRef}
+                    type="text"
+                    placeholder="Message..."
+                    value={newMessage}
+                    onChange={(e) => {
+                        setNewMessage(e.target.value)
+                        handleTyping()
+                    }}
+                    onKeyDown={handleKeyDown}
+                    className="flex-1 bg-gray-900 rounded-full px-4 py-2 text-sm text-white outline-none border border-gray-800 focus:border-red-500"
+                    disabled={sending || uploading}
+                />
+                <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={handleSendMessage}
+                    disabled={!newMessage.trim() || sending || uploading}
+                    className={`px-4 py-2 rounded-full text-white font-medium transition-all ${newMessage.trim() && !sending && !uploading
+                        ? 'bg-red-600 hover:bg-red-700'
+                        : 'bg-gray-800 text-gray-600 cursor-not-allowed'
+                        }`}
+                >
+                    {sending ? (
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                        'Send'
+                    )}
+                </motion.button>
             </div>
 
             {/* Media Viewer Modal */}

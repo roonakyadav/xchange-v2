@@ -90,18 +90,14 @@ export default function Chats() {
     if (!user) return null
 
     return (
-        <div className="h-screen bg-[#0b0b0b] flex flex-col overflow-hidden">
+        <div className="h-screen bg-[#0b0b0b] flex flex-col overflow-hidden" style={{ overflow: 'hidden' }}>
             {/* Desktop Layout */}
             {!isMobile && (
-                <div className="flex h-screen pt-0 md:pt-0">
-                    {/* Chat List Sidebar */}
-                    <motion.div
-                        initial={{ x: -300, opacity: 0 }}
-                        animate={{ x: 0, opacity: 1 }}
-                        className="w-[340px] border-r border-gray-800/50 flex flex-col bg-[#0b0b0b]"
-                    >
+                <div className="flex h-screen overflow-hidden">
+                    {/* Sidebar */}
+                    <aside className="w-[300px] border-r border-gray-800 overflow-y-auto hidden md:flex flex-col bg-[#0b0b0b]">
                         {/* Header */}
-                        <div className="p-6 border-b border-gray-800/50 bg-[#0b0b0b]/80 backdrop-blur-xl">
+                        <div className="sticky top-0 z-10 bg-[#0b0b0b] border-b border-gray-800 p-6">
                             <div className="flex items-center justify-between mb-4">
                                 <h1 className="text-2xl font-bold text-white">Chats</h1>
                                 <motion.button
@@ -127,21 +123,17 @@ export default function Chats() {
                         </div>
 
                         {/* Chat List */}
-                        <div className="flex-1 overflow-hidden">
+                        <div className="flex-1">
                             <ChatList
                                 onChatSelect={handleChatSelect}
                                 selectedChatId={selectedChatId}
                                 searchQuery={searchQuery}
                             />
                         </div>
-                    </motion.div>
+                    </aside>
 
-                    {/* Chat Thread */}
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        className="flex-1 flex flex-col bg-[#0b0b0b]"
-                    >
+                    {/* Chat Section */}
+                    <main className="flex-1 flex flex-col bg-black">
                         {selectedChatId ? (
                             <ChatThread chatId={selectedChatId} />
                         ) : (
@@ -159,7 +151,7 @@ export default function Chats() {
                                 </motion.div>
                             </div>
                         )}
-                    </motion.div>
+                    </main>
                 </div>
             )}
 

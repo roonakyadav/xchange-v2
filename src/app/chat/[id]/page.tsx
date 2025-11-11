@@ -23,7 +23,7 @@ export default function Chat() {
     const chatId = params.id as string
 
     return (
-        <div className="h-screen bg-black flex flex-col lg:pb-20 pt-0 mt-0">
+        <div className="h-screen bg-black flex flex-col overflow-hidden" style={{ overflow: 'hidden' }}>
             <div className="flex-1">
                 <ChatThread chatId={chatId} />
             </div>
