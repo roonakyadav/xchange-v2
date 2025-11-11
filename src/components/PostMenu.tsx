@@ -2,7 +2,8 @@
 
 import { useState, useRef, useEffect } from 'react'
 import toast from 'react-hot-toast'
-import { deletePostAndImage } from '@/lib/db'
+import { deletePostAndImage, savePost, unsavePost, isPostSaved } from '@/lib/db'
+import { useUser } from '@/hooks/useUser'
 
 interface PostMenuProps {
     postId: string
@@ -11,14 +12,19 @@ interface PostMenuProps {
     currentUser?: string | null
     onPostDeleted?: () => void
     onPostEdit?: (post: any) => void
+    onPostSaved?: () => void
+    onPostUnsaved?: () => void
     post?: any
 }
 
-export default function PostMenu({ postId, imageUrl, username, currentUser, onPostDeleted, onPostEdit, post }: PostMenuProps) {
+export default function PostMenu({ postId, imageUrl, username, currentUser, onPostDeleted, onPostEdit, onPostSaved, onPostUnsaved, post }: PostMenuProps) {
     const [isOpen, setIsOpen] = useState(false)
     const [showReportModal, setShowReportModal] = useState(false)
     const [showDeleteModal, setShowDeleteModal] = useState(false)
+    const [isSaved, setIsSaved] = useState(false)
+    const [checkingSaved, setCheckingSaved] = useState(false)
     const menuRef = useRef<HTMLDivElement>(null)
+    const { user } = useUser()
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -30,6 +36,25 @@ export default function PostMenu({ postId, imageUrl, username, currentUser, onPo
         document.addEventListener('mousedown', handleClickOutside)
         return () => document.removeEventListener('mousedown', handleClickOutside)
     }, [])
+
+    // Check if post is saved when menu opens
+    useEffect(() => {
+        const checkSavedStatus = async () => {
+            if (user && isOpen && !checkingSaved) {
+                setCheckingSaved(true)
+                try {
+                    const saved = await isPostSaved(user.id, postId)
+                    setIsSaved(saved)
+                } catch (error) {
+                    console.error('Error checking saved status:', error)
+                } finally {
+                    setCheckingSaved(false)
+                }
+            }
+        }
+
+        checkSavedStatus()
+    }, [user, postId, isOpen, checkingSaved])
 
     const handleDelete = (e: React.MouseEvent) => {
         e.stopPropagation()
@@ -76,6 +101,29 @@ export default function PostMenu({ postId, imageUrl, username, currentUser, onPo
         setShowReportModal(false)
     }
 
+    const handleSaveToggle = async (e: React.MouseEvent) => {
+        e.stopPropagation()
+        if (!user) return
+
+        try {
+            if (isSaved) {
+                await unsavePost(user.id, postId)
+                setIsSaved(false)
+                toast.success('post unsaved')
+                onPostUnsaved?.()
+            } else {
+                await savePost(user.id, postId)
+                setIsSaved(true)
+                toast.success('post saved')
+                onPostSaved?.()
+            }
+        } catch (error) {
+            console.error('Error toggling save:', error)
+            toast.error('Failed to save/unsave post')
+        }
+        setIsOpen(false)
+    }
+
     const isOwner = currentUser === username
 
     return (
@@ -98,6 +146,19 @@ export default function PostMenu({ postId, imageUrl, username, currentUser, onPo
             {isOpen && (
                 <div className="absolute top-12 right-2 bg-gray-900 border border-gray-700 rounded-lg shadow-lg z-10 min-w-[160px]">
                     <div className="py-1">
+                        {/* Save/Unsave option for all users */}
+                        {user && (
+                            <button
+                                onClick={handleSaveToggle}
+                                className="w-full text-left px-4 py-2 text-sm text-white hover:bg-gray-800 transition-colors"
+                            >
+                                {isSaved ? 'Unsave post' : 'Save post'}
+                            </button>
+                        )}
+
+                        {/* Separator */}
+                        {user && <div className="border-t border-gray-700 my-1"></div>}
+
                         {isOwner ? (
                             // Owner's menu: Edit, Share, Delete
                             <>

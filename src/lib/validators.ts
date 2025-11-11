@@ -59,6 +59,26 @@ export const profileSchema = z.object({
         .max(100, 'Name must be at most 100 characters')
         .trim(),
     username: usernameSchema,
+    bio: z
+        .string()
+        .max(500, 'Bio must be at most 500 characters')
+        .optional(),
+    portfolio: z
+        .string()
+        .url('Portfolio must be a valid URL')
+        .optional()
+        .or(z.literal('')),
+})
+
+export const feedbackSchema = z.object({
+    rating: z
+        .number()
+        .min(1, 'Rating must be at least 1')
+        .max(5, 'Rating must be at most 5'),
+    message: z
+        .string()
+        .max(1000, 'Message must be at most 1000 characters')
+        .optional(),
 })
 
 export const messageSchema = z.object({

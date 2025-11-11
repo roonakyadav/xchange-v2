@@ -64,3 +64,28 @@ export interface ChatWithPost extends Chat {
 export interface ChatWithMessages extends Chat {
     messages: Message[]
 }
+
+export interface SavedPost {
+    id: string
+    user_id: string
+    post_id: string
+    created_at: string
+    posts?: PostWithUser
+}
+
+export interface Feedback {
+    id: string
+    user_id: string
+    rating: number
+    message?: string
+    created_at: string
+}
+
+export interface UserStats {
+    totalPosts: number
+    totalViews: number
+    totalLikes: number
+    totalComments: number
+    joinDate: string
+    lastActive: string
+}

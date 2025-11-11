@@ -1,7 +1,7 @@
 import { supabase } from './supabase'
 import { formatTimeAgo } from './time'
 import bcrypt from 'bcryptjs'
-import type { User, Post, Chat, Message, PostWithUser, ChatWithPost, ChatWithMessages } from '@/types'
+import type { User, Post, Chat, Message, PostWithUser, ChatWithPost, ChatWithMessages, SavedPost, Feedback, UserStats } from '@/types'
 
 // User operations
 export async function getUser(username: string): Promise<User | null> {
@@ -948,4 +948,233 @@ export function computePreview(me: string, messages: Message[]): string {
 // Legacy function for backward compatibility
 export async function getChatPreviews(username: string): Promise<ChatPreview[]> {
     return getVisibleChats(username)
+}
+
+// Saved Posts operations
+export async function savePost(userId: string, postId: string): Promise<SavedPost> {
+    try {
+        const { data, error } = await supabase
+            .from('saved_posts')
+            .insert({
+                user_id: userId,
+                post_id: postId
+            })
+            .select()
+            .single()
+
+        if (error) {
+            // If table doesn't exist yet, throw a more specific error
+            if (error.code === '42P01') {
+                throw new Error('Saved posts feature is not available yet. Please run the database migrations.')
+            }
+            throw new Error(`Failed to save post: ${error.message}`)
+        }
+
+        return data
+    } catch (error) {
+        console.error('Error in savePost:', error)
+        throw error
+    }
+}
+
+export async function unsavePost(userId: string, postId: string): Promise<void> {
+    try {
+        const { error } = await supabase
+            .from('saved_posts')
+            .delete()
+            .eq('user_id', userId)
+            .eq('post_id', postId)
+
+        if (error) {
+            // If table doesn't exist yet, throw a more specific error
+            if (error.code === '42P01') {
+                throw new Error('Saved posts feature is not available yet. Please run the database migrations.')
+            }
+            throw new Error(`Failed to unsave post: ${error.message}`)
+        }
+    } catch (error) {
+        console.error('Error in unsavePost:', error)
+        throw error
+    }
+}
+
+export async function getSavedPosts(userId: string): Promise<SavedPost[]> {
+    try {
+        const { data, error } = await supabase
+            .from('saved_posts')
+            .select(`
+                *,
+                posts!inner (
+                    id,
+                    title,
+                    description,
+                    image_url,
+                    username,
+                    mode,
+                    price,
+                    tags,
+                    created_at,
+                    users!inner (
+                        username,
+                        name
+                    )
+                )
+            `)
+            .eq('user_id', userId)
+            .order('created_at', { ascending: false })
+
+        if (error) {
+            // If table doesn't exist yet, return empty array
+            if (error.code === '42P01') {
+                console.warn('saved_posts table does not exist yet, returning empty array')
+                return []
+            }
+            throw new Error(`Failed to get saved posts: ${error.message}`)
+        }
+
+        console.log('Saved posts data:', data) // Debug log
+        return data || []
+    } catch (error) {
+        console.error('Error in getSavedPosts:', error)
+        // Return empty array on any error to prevent crashes
+        return []
+    }
+}
+
+export async function isPostSaved(userId: string, postId: string): Promise<boolean> {
+    try {
+        const { data, error } = await supabase
+            .from('saved_posts')
+            .select('id')
+            .eq('user_id', userId)
+            .eq('post_id', postId)
+            .single()
+
+        if (error) {
+            // If table doesn't exist yet, return false
+            if (error.code === '42P01') {
+                console.warn('saved_posts table does not exist yet, returning false')
+                return false
+            }
+            if (error.code === 'PGRST116') return false // Not found
+            throw new Error(`Failed to check if post is saved: ${error.message}`)
+        }
+
+        return !!data
+    } catch (error) {
+        console.error('Error in isPostSaved:', error)
+        // Return false on any error to prevent crashes
+        return false
+    }
+}
+
+// User blocking functionality
+export async function isUserBlocked(blockerId: string, blockedUsername: string): Promise<boolean> {
+    try {
+        // For now, return false - blocking feature not implemented yet
+        // This prevents the app from crashing while we implement blocking later
+        return false
+    } catch (error) {
+        console.error('Error in isUserBlocked:', error)
+        return false
+    }
+}
+
+export async function blockUser(blockerId: string, blockedUsername: string): Promise<void> {
+    // Placeholder - blocking feature not implemented yet
+    console.warn('Block user feature not implemented yet')
+}
+
+export async function unblockUser(blockerId: string, blockedUsername: string): Promise<void> {
+    // Placeholder - blocking feature not implemented yet
+    console.warn('Unblock user feature not implemented yet')
+}
+
+// Feedback operations
+export async function submitFeedback(userId: string, rating: number, message?: string): Promise<Feedback> {
+    const { data, error } = await supabase
+        .from('feedback')
+        .insert({
+            user_id: userId,
+            rating,
+            message
+        })
+        .select()
+        .single()
+
+    if (error) {
+        throw new Error(`Failed to submit feedback: ${error.message}`)
+    }
+
+    return data
+}
+
+export async function getUserFeedback(userId: string): Promise<Feedback[]> {
+    const { data, error } = await supabase
+        .from('feedback')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+
+    if (error) {
+        throw new Error(`Failed to get user feedback: ${error.message}`)
+    }
+
+    return data || []
+}
+
+// User stats operations
+export async function getUserStats(userId: string): Promise<UserStats> {
+    // Get user data
+    const { data: user, error: userError } = await supabase
+        .from('users')
+        .select('username, created_at')
+        .eq('id', userId)
+        .single()
+
+    if (userError) {
+        throw new Error(`Failed to get user: ${userError.message}`)
+    }
+
+    // Get post count
+    const { count: postCount, error: postError } = await supabase
+        .from('posts')
+        .select('*', { count: 'exact', head: true })
+        .eq('username', user?.username)
+
+    if (postError) {
+        throw new Error(`Failed to get post count: ${postError.message}`)
+    }
+
+    // For now, return basic stats. In a real app, you'd calculate views, likes, etc.
+    return {
+        totalPosts: postCount || 0,
+        totalViews: 0, // Placeholder
+        totalLikes: 0, // Placeholder
+        totalComments: 0, // Placeholder
+        joinDate: user?.created_at || new Date().toISOString(),
+        lastActive: new Date().toISOString() // Placeholder
+    }
+}
+
+// Update user profile with bio and portfolio
+export async function updateUserProfile(userId: string, updates: {
+    name?: string
+    username?: string
+    bio?: string
+    portfolio?: string
+    avatar_url?: string
+}): Promise<User> {
+    const { data, error } = await supabase
+        .from('users')
+        .update(updates)
+        .eq('id', userId)
+        .select()
+        .single()
+
+    if (error) {
+        throw new Error(`Failed to update user profile: ${error.message}`)
+    }
+
+    return data
 }

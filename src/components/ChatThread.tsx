@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useEffect, useState, useRef, useCallback } from 'react'
-import { motion, AnimatePresence, useAnimation } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import { Plus, Loader2 } from 'lucide-react'
 import { getChatById, sendMessage, markThreadRead } from '@/lib/db'
@@ -21,67 +21,7 @@ interface ChatThreadProps {
     chatId: string
 }
 
-interface MessageGroup {
-    sender: string
-    messages: Message[]
-    timestamp: string
-}
 
-interface SwipeableMessageProps {
-    message: Message
-    user: any
-    onReply: (message: Message) => void
-}
-
-const SwipeableMessage: React.FC<SwipeableMessageProps> = ({ message, user, onReply }) => {
-    const controls = useAnimation()
-    const screenWidth = typeof window !== "undefined" ? window.innerWidth : 400
-    const triggerDistance = screenWidth * 0.25
-
-    const handleDragEnd = async (event: any, info: any) => {
-        const offset = info.offset.x
-        const isMine = message.sender === user.username
-
-        if (!isMine && offset > triggerDistance) {
-            controls.start({ x: 0, transition: { type: "spring", stiffness: 700, damping: 32 } })
-            onReply(message)
-        } else {
-            controls.start({ x: 0, transition: { type: "spring", stiffness: 500, damping: 30 } })
-        }
-    }
-
-    return (
-        <div>
-            {/* If this message is a reply */}
-            {message.reply_preview && (
-                <div className={`mb-1 px-3 py-2 rounded-lg text-xs bg-gray-800 text-gray-300 max-w-[70%] whitespace-pre-wrap break-words leading-snug ${message.sender === user.username ? 'ml-auto text-right' : 'text-left'}`}>
-                    {message.reply_preview.length > 80 ? message.reply_preview.slice(0, 80) + '…' : message.reply_preview}
-                </div>
-            )}
-
-            {/* Actual message bubble */}
-            <motion.div
-                drag="x"
-                dragConstraints={{ left: 0, right: 0 }}
-                dragElastic={0.25}
-                onDragEnd={handleDragEnd}
-                animate={controls}
-                transition={{ type: "spring", stiffness: 400, damping: 28 }}
-                className="w-full flex items-end"
-            >
-                <div
-                    className={`inline-block px-3 py-2 rounded-2xl max-w-[75%] whitespace-pre-wrap break-words leading-relaxed
-                        ${message.sender === user.username
-                            ? 'bg-red-500 text-white self-end text-right'
-                            : 'bg-gray-700 text-white self-start text-left'}
-                    `}
-                >
-                    {message.body}
-                </div>
-            </motion.div>
-        </div>
-    )
-}
 
 export default function ChatThread({ chatId }: ChatThreadProps) {
     const router = useRouter()
@@ -93,9 +33,8 @@ export default function ChatThread({ chatId }: ChatThreadProps) {
     const [sending, setSending] = useState(false)
     const [isTyping, setIsTyping] = useState(false)
     const [otherUserTyping, setOtherUserTyping] = useState(false)
-    const [inputFocused, setInputFocused] = useState(false)
+
     const [isMobile, setIsMobile] = useState(false)
-    const [replyingTo, setReplyingTo] = useState<Message | null>(null)
     const [uploading, setUploading] = useState(false)
     const [uploadProgress, setUploadProgress] = useState(0)
     const [mediaViewer, setMediaViewer] = useState<{
@@ -115,20 +54,27 @@ export default function ChatThread({ chatId }: ChatThreadProps) {
     // Detect mobile viewport
     useEffect(() => {
         const checkMobile = () => {
-            setIsMobile(window.innerWidth < 768)
+            setIsMobile(window.innerWidth < 1024)
         }
 
         checkMobile()
         window.addEventListener('resize', checkMobile)
         return () => window.removeEventListener('resize', checkMobile)
-    }, []) // Empty dependency array - only run once on mount
+    }, [])
 
     // Auto-scroll to bottom when new messages arrive
     useEffect(() => {
-        if (messages.length > 0) {
-            scrollToBottom()
+        const container = document.querySelector('.chat-scroll')
+        if (container) {
+            container.scrollTop = container.scrollHeight
         }
-    }, [messages.length])
+    }, [messages])
+
+    // Add auto-scroll functionality using chat-scroll-container class
+    useEffect(() => {
+        const el = document.getElementById('chatScrollContainer')
+        if (el) el.scrollTop = el.scrollHeight
+    }, [messages])
 
     // Load chat
     useEffect(() => {
@@ -161,7 +107,6 @@ export default function ChatThread({ chatId }: ChatThreadProps) {
 
         const handleVisibilityChange = () => {
             if (!document.hidden && user) {
-                // Debounce for 300ms to avoid excessive calls
                 clearTimeout(timeoutId)
                 timeoutId = setTimeout(() => {
                     markThreadRead(chatId, user.username).catch(console.error)
@@ -205,7 +150,6 @@ export default function ChatThread({ chatId }: ChatThreadProps) {
         const handleChatDeleted = (event: CustomEvent<{ chatId: string }>) => {
             if (event.detail.chatId === chatId) {
                 console.log('Chat deleted, cleaning up subscriptions for chat:', chatId)
-                // Clean up real-time subscriptions
                 messageChannelsRef.current.forEach(channel => {
                     channel.unsubscribe()
                 })
@@ -256,20 +200,12 @@ export default function ChatThread({ chatId }: ChatThreadProps) {
         setSending(true)
 
         try {
-            const realMessage = await sendMessage({
+            await sendMessage({
                 chatId,
                 sender: user.username,
                 body: messageText,
             })
 
-            if (replyingTo) {
-                realMessage.reply_to_id = replyingTo.id;
-                realMessage.reply_preview = replyingTo.body;
-            }
-
-            setReplyingTo(null);
-
-            // The hook will handle adding the message via real-time subscription
             // Scroll to bottom after sending
             setTimeout(scrollToBottom, 100)
 
@@ -292,7 +228,7 @@ export default function ChatThread({ chatId }: ChatThreadProps) {
             setNewMessage(messageText)
         } finally {
             setSending(false)
-            // Keep focus on desktop after sending, but not on mobile
+            // Keep focus on desktop after sending
             if (!isMobile) {
                 requestAnimationFrame(() => inputRef.current?.focus())
             }
@@ -300,49 +236,10 @@ export default function ChatThread({ chatId }: ChatThreadProps) {
     }
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
-        if (e.key === 'Escape' && replyingTo) {
-            e.preventDefault()
-            setReplyingTo(null)
-            return
-        }
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault()
             handleSendMessage(e)
-            if (!isMobile) {
-                requestAnimationFrame(() => inputRef.current?.focus())
-            }
         }
-    }
-
-    const groupMessages = (messages: Message[]): MessageGroup[] => {
-        const groups: MessageGroup[] = []
-        let currentGroup: MessageGroup | null = null
-
-        messages.forEach((message) => {
-            const messageTime = new Date(message.created_at)
-            const shouldGroup = currentGroup &&
-                currentGroup.sender === message.sender &&
-                (messageTime.getTime() - new Date(currentGroup.timestamp).getTime()) < 2 * 60 * 1000 // 2 minutes
-
-            if (shouldGroup && currentGroup) {
-                currentGroup.messages.push(message)
-            } else {
-                if (currentGroup) {
-                    groups.push(currentGroup)
-                }
-                currentGroup = {
-                    sender: message.sender,
-                    messages: [message],
-                    timestamp: message.created_at,
-                }
-            }
-        })
-
-        if (currentGroup) {
-            groups.push(currentGroup)
-        }
-
-        return groups
     }
 
     const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -371,8 +268,8 @@ export default function ChatThread({ chatId }: ChatThreadProps) {
             // Send media message
             await supabase.from('messages').insert([{
                 chat_id: chatId,
-                sender: user.username, // Use username as sender (matches database schema)
-                body: `[MEDIA]${mediaUrl}`, // Prefix to identify media messages
+                sender: user.username,
+                body: `[MEDIA]${mediaUrl}`,
             }])
 
             // Scroll to bottom after sending
@@ -389,33 +286,43 @@ export default function ChatThread({ chatId }: ChatThreadProps) {
         }
     }
 
-    const getMessageStatus = (message: Message) => {
-        if (message.read_at) return 'read'
-        if (message.delivered_at) return 'delivered'
-        return 'sent'
-    }
+
 
     if (loading) {
         return (
-            <div className="flex flex-col h-full bg-black">
-                <div className="p-4 border-b border-gray-800">
-                    <div className="animate-pulse">
-                        <div className="h-6 bg-gray-700 rounded w-32"></div>
+            <div className="flex flex-col h-full bg-[#0b0b0b]">
+                {/* Header Skeleton */}
+                <div className="p-6 border-b border-gray-800/50 bg-[#0b0b0b]/80 backdrop-blur-xl">
+                    <div className="animate-pulse flex items-center space-x-3">
+                        <div className="w-12 h-12 bg-gray-700 rounded-full"></div>
+                        <div className="flex-1">
+                            <div className="h-5 bg-gray-700 rounded w-24 mb-1"></div>
+                            <div className="h-3 bg-gray-700 rounded w-16"></div>
+                        </div>
                     </div>
                 </div>
-                <div className="flex-1 overflow-y-auto pb-20">
-                    <div className="p-4 space-y-4">
-                        {[...Array(5)].map((_, i) => (
-                            <div key={i} className={`animate-pulse ${i % 2 === 0 ? 'ml-auto' : 'mr-auto'}`}>
-                                <div className={`h-12 bg-gray-700 rounded-2xl ${i % 2 === 0 ? 'w-32' : 'w-24'}`}></div>
-                            </div>
-                        ))}
-                    </div>
+
+                {/* Messages Skeleton */}
+                <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                    {[...Array(6)].map((_, i) => (
+                        <motion.div
+                            key={i}
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: i * 0.1 }}
+                            className={`animate-pulse ${i % 2 === 0 ? 'ml-auto' : 'mr-auto'}`}
+                        >
+                            <div className={`h-12 bg-gray-700 rounded-2xl ${i % 2 === 0 ? 'w-32' : 'w-24'}`}></div>
+                        </motion.div>
+                    ))}
                 </div>
-                <div className="sticky bottom-0 z-50 bg-black border-t border-gray-800 p-4">
-                    <div className="flex space-x-2">
-                        <div className="flex-1 h-12 bg-gray-900 border border-gray-700 rounded-2xl animate-pulse"></div>
-                        <div className="w-20 h-12 bg-gray-700 rounded-2xl animate-pulse"></div>
+
+                {/* Input Skeleton */}
+                <div className="p-6 border-t border-gray-800/50 bg-[#0b0b0b]/80 backdrop-blur-xl">
+                    <div className="animate-pulse flex items-center space-x-3">
+                        <div className="w-10 h-10 bg-gray-700 rounded-full"></div>
+                        <div className="flex-1 h-12 bg-gray-700 rounded-2xl"></div>
+                        <div className="w-20 h-12 bg-gray-700 rounded-2xl"></div>
                     </div>
                 </div>
             </div>
@@ -425,21 +332,27 @@ export default function ChatThread({ chatId }: ChatThreadProps) {
     if (!chat || !user) return null
 
     const otherUser = chat.user1 === user.username ? chat.user2 : chat.user1
-    const messageGroups = groupMessages(messages)
 
     return (
-        <div className="flex flex-col h-full bg-black">
+        <div className="flex flex-col h-full bg-[#0b0b0b]">
             {/* Header */}
-            <div className="sticky top-0 bg-black/80 backdrop-blur-sm border-b border-gray-800 p-4 z-10">
+            <div className="p-6 border-b border-gray-800/50 bg-[#0b0b0b]/80 backdrop-blur-xl">
                 <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                        <div className="w-8 h-8 bg-gray-700 rounded-full flex items-center justify-center">
-                            <span className="text-white text-sm font-medium">
-                                {otherUser.charAt(0).toUpperCase()}
-                            </span>
+                    <div className="flex items-center space-x-4">
+                        {/* Avatar */}
+                        <div className="relative">
+                            <div className="w-12 h-12 bg-gradient-to-br from-red-500 to-red-600 rounded-full flex items-center justify-center shadow-lg">
+                                <span className="text-white font-bold text-lg">
+                                    {otherUser.charAt(0).toUpperCase()}
+                                </span>
+                            </div>
+                            {/* Online indicator */}
+                            <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-[#0b0b0b]"></div>
                         </div>
+
+                        {/* User Info */}
                         <div>
-                            <h2 className="font-medium text-white">@{otherUser}</h2>
+                            <h2 className="font-semibold text-white text-lg">@{otherUser}</h2>
                             {otherUserTyping ? (
                                 <div className="flex items-center space-x-1">
                                     <TypingDots />
@@ -447,185 +360,194 @@ export default function ChatThread({ chatId }: ChatThreadProps) {
                                 </div>
                             ) : messages.length > 0 ? (
                                 <span className="text-xs text-gray-500">
-                                    {formatTimeAgo(messages[messages.length - 1].created_at)}
+                                    Active {formatTimeAgo(messages[messages.length - 1].created_at)}
                                 </span>
-                            ) : null}
+                            ) : (
+                                <span className="text-xs text-gray-500">Say hi 👋</span>
+                            )}
                         </div>
                     </div>
 
+                    {/* Menu Button */}
+                    <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        className="p-2 bg-gray-800/50 hover:bg-gray-700/50 rounded-xl text-gray-400 hover:text-white transition-colors"
+                    >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+                        </svg>
+                    </motion.button>
                 </div>
             </div>
 
-            {/* Messages - Scrollable area */}
-            <div className={`flex-1 overflow-y-auto overflow-x-hidden ${isMobile ? 'pb-24' : 'pb-20'} scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent`}>
-                <div className="flex flex-col w-full px-3">
-                    <AnimatePresence>
-                        {messages.map((message, index) => (
+            {/* Messages Area */}
+            <div id="chatScrollContainer" className="chat-scroll flex flex-col flex-1 overflow-y-auto px-6 py-4 space-y-3 scrollbar-none">
+                {/* Messages */}
+                <AnimatePresence>
+                    {messages.map((message) => {
+                        const isMine = message.sender === user.username
+
+                        return (
                             <motion.div
                                 key={message.id}
-                                className={`flex w-full mb-2 ${message.sender === user.username ? 'justify-end' : 'justify-start'}`}
-                                drag="x"
-                                dragConstraints={{ left: 0, right: 0 }}
-                                dragElastic={0.25}
-                                onDragEnd={(e, info) => {
-                                    const offset = info.offset.x
-                                    const trigger = window.innerWidth * 0.25
-                                    if (offset > trigger && message.sender !== user.username) {
-                                        setReplyingTo(message)
-                                    }
-                                }}
-                                initial={{ opacity: 0, y: 20 }}
+                                className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}
+                                initial={{ opacity: 0, y: 10 }}
                                 animate={{ opacity: 1, y: 0 }}
-                                transition={{ delay: index * 0.02 }}
+                                exit={{ opacity: 0 }}
+                                transition={{ duration: 0.25, ease: 'easeOut' }}
                             >
-                                <div className="max-w-[80%]">
-                                    {message.reply_preview && (
-                                        <div className={`text-xs text-gray-400 mb-1 px-3 py-1 rounded-lg bg-gray-800/70
-                                            ${message.sender === user.username ? 'text-right ml-auto' : 'text-left'}`}>
-                                            {message.reply_preview}
-                                        </div>
-                                    )}
-
+                                <div
+                                    className={`max-w-[70%] break-words px-4 py-2 text-sm rounded-2xl shadow-md ${isMine
+                                        ? 'bg-red-600 text-white rounded-br-sm shadow-[0_0_8px_rgba(255,0,60,0.3)]'
+                                        : 'bg-[#141414] text-gray-200 rounded-bl-sm'
+                                        }`}
+                                >
                                     {message.body.startsWith('[MEDIA]') ? (
-                                        <div className={`flex ${message.sender === user.username ? 'justify-end' : 'justify-start'} mb-2`}>
-                                            {(() => {
-                                                const mediaUrl = message.body.replace('[MEDIA]', '')
-                                                const isVideo = mediaUrl.includes('.mp4') || mediaUrl.includes('.webm') || mediaUrl.includes('.mov') || mediaUrl.includes('.avi')
+                                        (() => {
+                                            const mediaUrl = message.body.replace('[MEDIA]', '')
+                                            const isVideo = mediaUrl.includes('.mp4') || mediaUrl.includes('.webm') || mediaUrl.includes('.mov') || mediaUrl.includes('.avi')
 
-                                                return isVideo ? (
-                                                    <video
-                                                        src={mediaUrl}
-                                                        controls
-                                                        className="max-w-[70%] rounded-2xl border border-gray-700 object-cover cursor-pointer hover:opacity-90 transition-opacity"
-                                                        style={{ maxHeight: '300px' }}
-                                                        onClick={() => setMediaViewer({ isOpen: true, mediaUrl, isVideo: true })}
-                                                    />
-                                                ) : (
-                                                    <img
-                                                        src={mediaUrl}
-                                                        alt="uploaded media"
-                                                        className="max-w-[70%] rounded-2xl border border-gray-700 object-cover cursor-pointer hover:opacity-90 transition-opacity"
-                                                        style={{ maxHeight: '300px' }}
-                                                        onClick={() => setMediaViewer({ isOpen: true, mediaUrl, isVideo: false })}
-                                                    />
-                                                )
-                                            })()}
-                                        </div>
+                                            return isVideo ? (
+                                                <video
+                                                    src={mediaUrl}
+                                                    controls
+                                                    className="max-w-full rounded-2xl border border-gray-700/50 object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                                                    style={{ maxHeight: '300px' }}
+                                                    onClick={() => setMediaViewer({ isOpen: true, mediaUrl, isVideo: true })}
+                                                />
+                                            ) : (
+                                                <img
+                                                    src={mediaUrl}
+                                                    alt="shared media"
+                                                    className="max-w-full rounded-2xl border border-gray-700/50 object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                                                    style={{ maxHeight: '300px' }}
+                                                    onClick={() => setMediaViewer({ isOpen: true, mediaUrl, isVideo: false })}
+                                                />
+                                            )
+                                        })()
                                     ) : (
-                                        <div
-                                            className={`chat-bubble ${message.sender === user.username
-                                                ? 'bg-red-500 text-white ml-auto rounded-tr-none'
-                                                : 'bg-gray-700 text-white mr-auto rounded-tl-none'
-                                                }`}
-                                        >
+                                        <p className="whitespace-pre-wrap break-words">
                                             {message.body}
-                                        </div>
+                                        </p>
                                     )}
                                 </div>
                             </motion.div>
-                        ))}
-                    </AnimatePresence>
+                        )
+                    })}
+                </AnimatePresence>
 
-                    {/* Typing indicator */}
-                    {otherUserTyping && (
-                        <motion.div
-                            initial={{ opacity: 0, y: 20 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            className="flex justify-start"
-                        >
-                            <div className="bg-gray-700 rounded-2xl px-4 py-2">
-                                <TypingDots />
+                {/* Typing Indicator */}
+                {otherUserTyping && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="flex justify-start"
+                        transition={{ duration: 0.25, ease: 'easeOut' }}
+                    >
+                        <div className="bg-[#141414] text-gray-200 rounded-2xl rounded-bl-sm px-4 py-2">
+                            <TypingDots />
+                        </div>
+                    </motion.div>
+                )}
+
+                {/* Empty State */}
+                {messages.length === 0 && !otherUserTyping && (
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="flex-1 flex items-center justify-center"
+                    >
+                        <div className="text-center">
+                            <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <svg className="w-8 h-8 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                                </svg>
                             </div>
-                        </motion.div>
-                    )}
+                            <h3 className="text-lg font-semibold text-white mb-2">Start a conversation</h3>
+                            <p className="text-gray-400">Send a message to @{otherUser}</p>
+                        </div>
+                    </motion.div>
+                )}
 
-                    <div ref={messagesEndRef} />
-                </div>
+
             </div>
 
-            {/* Message Input - Fixed on mobile, fixed on desktop (lg+) */}
-            <div
-                className={
-                    isMobile
-                        ? 'fixed bottom-0 left-0 right-0 z-50 bg-black border-t-2 border-gray-700 p-4'
-                        : 'lg:fixed lg:bottom-0 lg:left-0 lg:right-0 lg:z-50 lg:bg-black border-t-2 border-gray-700 p-4'
-                }
-                style={{ paddingBottom: isMobile ? 'env(safe-area-inset-bottom)' : undefined }}
-            >
-                <form onSubmit={handleSendMessage} className="flex flex-col space-y-2">
-                    {replyingTo && (
-                        <div className="flex items-center justify-between bg-gray-800/80 border border-gray-700 rounded-xl p-2 mb-2 animate-slideDown">
-                            <div>
-                                <p className="text-xs text-gray-400">Replying to @{replyingTo.sender}</p>
-                                <p className="text-sm text-gray-300 truncate max-w-[280px]">{replyingTo.body}</p>
-                            </div>
-                            <button
-                                onClick={() => setReplyingTo(null)}
-                                className="text-gray-500 hover:text-white"
-                                aria-label="cancel reply"
-                            >
-                                ✕
-                            </button>
-                        </div>
-                    )}
-                    {/* Upload Progress Bar */}
-                    {uploading && (
-                        <div className="w-full flex items-center gap-2 text-gray-400 px-1 py-1">
-                            <div className="flex-1 h-2 bg-gray-700 rounded-full overflow-hidden">
-                                <div
-                                    className="h-2 bg-red-500 transition-all duration-150"
-                                    style={{ width: `${uploadProgress}%` }}
-                                ></div>
-                            </div>
-                            <span className="text-xs">{uploadProgress}%</span>
-                        </div>
-                    )}
-
-                    <div className="flex items-center space-x-2">
-                        {/* Upload Button */}
-                        <label className="relative flex items-center justify-center bg-gray-800 hover:bg-gray-700 text-white rounded-full w-10 h-10 cursor-pointer transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed">
-                            {uploading ? (
-                                <Loader2 className="animate-spin w-5 h-5" />
-                            ) : (
-                                <Plus className="w-5 h-5" />
-                            )}
-                            <input
-                                type="file"
-                                accept="image/*,video/*"
-                                onChange={handleFileSelect}
-                                className="absolute inset-0 opacity-0 cursor-pointer"
-                                disabled={uploading}
+            {/* Message Composer */}
+            <div className={`fixed bottom-0 ${isMobile ? 'left-0' : 'left-[340px]'} right-0 bg-[#0b0b0b] border-t border-gray-800 px-6 py-4 z-10`}>
+                {/* Upload Progress */}
+                {uploading && (
+                    <div className="mb-4 flex items-center space-x-3 text-gray-400">
+                        <div className="flex-1 h-2 bg-gray-700 rounded-full overflow-hidden">
+                            <div
+                                className="h-2 bg-red-500 transition-all duration-300"
+                                style={{ width: `${uploadProgress}%` }}
                             />
-                        </label>
-
-                        {/* Message Input */}
-                        <textarea
-                            ref={inputRef}
-                            value={newMessage}
-                            onChange={(e) => {
-                                setNewMessage(e.target.value)
-                                handleTyping()
-                            }}
-                            onKeyDown={handleKeyDown}
-                            placeholder="Type a message..."
-                            className="flex-1 bg-gray-900 border border-gray-700 rounded-2xl px-4 py-3 text-white placeholder-gray-400 resize-none focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 disabled:opacity-50"
-                            rows={1}
-                            disabled={sending || uploading}
-                            aria-label="Type your message"
-                        />
-
-                        {/* Send Button */}
-                        <button
-                            type="button"
-                            disabled={!newMessage.trim() || sending || uploading}
-                            onMouseDown={(e) => e.preventDefault()}
-                            onClick={handleSendMessage}
-                            className="bg-red-500 hover:bg-red-600 disabled:bg-red-300 text-white px-6 py-3 rounded-2xl font-medium transition-colors disabled:cursor-not-allowed"
-                            aria-label="Send message"
-                        >
-                            {sending ? '...' : 'Send'}
-                        </button>
+                        </div>
+                        <span className="text-sm">{uploadProgress}%</span>
                     </div>
+                )}
+
+                <form onSubmit={handleSendMessage} className="flex items-end gap-3">
+                    {/* Attachment Button */}
+                    <label className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-full bg-[#141414] hover:bg-[#1a1a1a] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+                        {uploading ? (
+                            <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
+                        ) : (
+                            <Plus className="w-5 h-5 text-gray-400 hover:text-white" />
+                        )}
+                        <input
+                            type="file"
+                            accept="image/*,video/*"
+                            onChange={handleFileSelect}
+                            className="hidden"
+                            disabled={uploading}
+                        />
+                    </label>
+
+                    {/* Message Input */}
+                    <textarea
+                        ref={inputRef}
+                        value={newMessage}
+                        onChange={(e) => {
+                            setNewMessage(e.target.value)
+                            handleTyping()
+
+                            // Auto-resize textarea
+                            const target = e.target as HTMLTextAreaElement
+                            target.style.height = 'auto'
+                            target.style.height = `${Math.min(target.scrollHeight, 120)}px`
+                        }}
+                        onKeyDown={handleKeyDown}
+                        placeholder={`Message @${otherUser}...`}
+                        className="flex-1 resize-none bg-[#141414] text-gray-200 placeholder-gray-500 rounded-2xl px-4 py-3 focus:outline-none focus:ring-1 focus:ring-red-500 min-h-[44px] max-h-[120px] overflow-hidden shadow-inner"
+                        rows={1}
+                        disabled={sending || uploading}
+                        style={{ height: '44px' }}
+                    />
+
+                    {/* Send Button */}
+                    <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        type="submit"
+                        disabled={!newMessage.trim() || sending || uploading}
+                        className={`h-10 px-6 rounded-2xl font-medium transition-all ${newMessage.trim() && !sending && !uploading
+                            ? 'bg-gradient-to-r from-red-600 to-pink-500 text-white shadow-lg hover:shadow-xl hover:opacity-90'
+                            : 'bg-gray-800 text-gray-600 cursor-not-allowed'
+                            }`}
+                    >
+                        {sending ? (
+                            <Loader2 className="w-5 h-5 animate-spin" />
+                        ) : (
+                            <span className="hidden sm:inline">Send</span>
+                        )}
+                        {!sending && (
+                            <svg className="w-5 h-5 sm:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                            </svg>
+                        )}
+                    </motion.button>
                 </form>
             </div>
 

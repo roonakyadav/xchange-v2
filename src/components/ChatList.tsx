@@ -12,13 +12,16 @@ import type { ChatPreview } from '@/lib/db'
 
 interface ChatListProps {
     onChatSelect?: (chatId: string) => void
+    selectedChatId?: string | null
+    searchQuery?: string
 }
 
-export default function ChatList({ onChatSelect }: ChatListProps) {
+export default function ChatList({ onChatSelect, selectedChatId, searchQuery }: ChatListProps) {
     const router = useRouter()
     const { user } = useUser()
     const [chats, setChats] = useState<ChatPreview[]>([])
     const [loading, setLoading] = useState(true)
+    const [filteredChats, setFilteredChats] = useState<ChatPreview[]>([])
 
     useEffect(() => {
         if (!user) return
@@ -45,6 +48,20 @@ export default function ChatList({ onChatSelect }: ChatListProps) {
         }
     }, [user])
 
+    // Filter chats based on search query
+    useEffect(() => {
+        if (!searchQuery?.trim()) {
+            setFilteredChats(chats)
+        } else {
+            const filtered = chats.filter(chat =>
+                chat.otherUser.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                (chat.lastMessage?.body && chat.lastMessage.body.toLowerCase().includes(searchQuery.toLowerCase())) ||
+                (chat.posts?.title && chat.posts.title.toLowerCase().includes(searchQuery.toLowerCase()))
+            )
+            setFilteredChats(filtered)
+        }
+    }, [chats, searchQuery])
+
     const loadChats = async () => {
         if (!user) return
 
@@ -64,8 +81,6 @@ export default function ChatList({ onChatSelect }: ChatListProps) {
             c.id === chat.id ? { ...c, unreadCount: 0 } : c
         ))
 
-        // Navigate to chat
-        router.push(`/chat/${chat.id}`)
         onChatSelect?.(chat.id)
     }
 
@@ -100,48 +115,56 @@ export default function ChatList({ onChatSelect }: ChatListProps) {
 
     if (loading) {
         return (
-            <div className="p-4 space-y-4">
-                {[...Array(3)].map((_, i) => (
-                    <div key={i} className="animate-pulse">
-                        <div className="flex items-center space-x-3 p-3">
-                            <div className="w-12 h-12 bg-gray-700 rounded-full"></div>
+            <div className="flex-1 overflow-y-auto">
+                <div className="p-4 space-y-3">
+                    {[...Array(5)].map((_, i) => (
+                        <motion.div
+                            key={i}
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: i * 0.1 }}
+                            className="animate-pulse flex items-center space-x-3 p-4 rounded-xl bg-gray-800/30"
+                        >
+                            <div className="w-14 h-14 bg-gray-700 rounded-full"></div>
                             <div className="flex-1 space-y-2">
                                 <div className="h-4 bg-gray-700 rounded w-3/4"></div>
                                 <div className="h-3 bg-gray-700 rounded w-1/2"></div>
                             </div>
-                        </div>
-                    </div>
-                ))}
+                        </motion.div>
+                    ))}
+                </div>
             </div>
         )
     }
 
     return (
-        <div className="h-full bg-black">
-            {/* Header */}
-            <div className="sticky top-0 bg-black/80 backdrop-blur-sm border-b border-gray-800 p-4 z-10">
-                <h1 className="text-xl font-bold">Messages</h1>
-            </div>
-
-            {/* Chat List */}
-            <div className="flex-1 overflow-y-auto">
-                <AnimatePresence>
-                    {chats.length === 0 ? (
-                        <motion.div
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            className="p-8 text-center"
-                        >
-                            <p className="text-gray-400">No conversations yet</p>
-                            <p className="text-sm text-gray-500 mt-2">
-                                Start chatting by messaging sellers on posts
-                            </p>
-                        </motion.div>
-                    ) : (
-                        chats.map((chat, index) => {
+        <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent">
+            <AnimatePresence>
+                {filteredChats.length === 0 ? (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        className="p-8 text-center"
+                    >
+                        <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <svg className="w-8 h-8 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                            </svg>
+                        </div>
+                        <p className="text-gray-400 text-lg mb-2">
+                            {searchQuery ? 'No conversations found' : 'No conversations yet'}
+                        </p>
+                        <p className="text-sm text-gray-500">
+                            {searchQuery ? 'Try a different search term' : 'Start chatting by messaging sellers on posts'}
+                        </p>
+                    </motion.div>
+                ) : (
+                    <div className="p-2">
+                        {filteredChats.map((chat, index) => {
                             const previewText = getPreviewText(chat)
                             const timeAgo = chat.updated_at ? formatTimeAgo(chat.updated_at) : ''
                             const hasUnread = chat.unreadCount > 0
+                            const isSelected = selectedChatId === chat.id
 
                             return (
                                 <motion.div
@@ -151,66 +174,62 @@ export default function ChatList({ onChatSelect }: ChatListProps) {
                                     exit={{ opacity: 0, x: -20 }}
                                     transition={{ delay: index * 0.05 }}
                                     onClick={() => handleChatClick(chat)}
-                                    className={`flex items-center space-x-3 p-4 hover:bg-gray-900 cursor-pointer border-b border-gray-800/50 transition-colors ${hasUnread ? 'bg-red-500/5 border-red-500/20' : ''
+                                    className={`flex items-center space-x-4 p-4 mx-2 rounded-2xl cursor-pointer transition-all duration-200 hover:bg-gray-800/50 ${isSelected
+                                            ? 'bg-red-500/10 border border-red-500/30 shadow-lg shadow-red-500/10'
+                                            : hasUnread
+                                                ? 'bg-red-500/5 border border-red-500/20'
+                                                : 'hover:bg-gray-800/30'
                                         }`}
                                 >
-                                    {/* Avatar */}
-                                    <div className="w-12 h-12 bg-gray-700 rounded-full flex items-center justify-center relative">
-                                        <span className="text-white font-medium">
-                                            {chat.otherUser.charAt(0).toUpperCase()}
-                                        </span>
+                                    {/* Avatar with Online Status */}
+                                    <div className="relative flex-shrink-0">
+                                        <div className="w-14 h-14 bg-gradient-to-br from-red-500 to-red-600 rounded-full flex items-center justify-center shadow-lg">
+                                            <span className="text-white font-bold text-lg">
+                                                {chat.otherUser.charAt(0).toUpperCase()}
+                                            </span>
+                                        </div>
+                                        {/* Online indicator */}
+                                        <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-[#0b0b0b]"></div>
+                                        {/* Unread indicator */}
                                         {hasUnread && (
                                             <motion.div
                                                 initial={{ scale: 0 }}
                                                 animate={{ scale: 1 }}
-                                                className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-red-500 border border-black"
-                                            />
+                                                className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 border-2 border-[#0b0b0b] flex items-center justify-center"
+                                            >
+                                                <span className="text-white text-xs font-bold">
+                                                    {chat.unreadCount > 9 ? '9+' : chat.unreadCount}
+                                                </span>
+                                            </motion.div>
                                         )}
                                     </div>
 
                                     {/* Chat Info */}
                                     <div className="flex-1 min-w-0">
-                                        <div className="flex items-center justify-between">
-                                            <h3 className={`font-medium truncate ${hasUnread ? 'text-white' : 'text-white'
+                                        <div className="flex items-center justify-between mb-1">
+                                            <h3 className={`font-semibold text-base truncate ${hasUnread ? 'text-white' : 'text-gray-200'
                                                 }`}>
                                                 @{chat.otherUser}
                                             </h3>
                                             {timeAgo && (
-                                                <span className="text-xs text-gray-500 ml-2">
+                                                <span className="text-xs text-gray-500 flex-shrink-0 ml-2">
                                                     {timeAgo}
                                                 </span>
                                             )}
                                         </div>
 
-                                        <div className="flex items-center justify-between mt-1">
-                                            <p className={`text-sm truncate ${hasUnread ? 'text-gray-200' : 'text-gray-400'
-                                                } ${previewText.startsWith('**') ? 'font-bold' : ''}`}>
+                                        <div className="flex items-center justify-between">
+                                            <p className={`text-sm truncate max-w-[200px] ${hasUnread ? 'text-gray-200 font-medium' : 'text-gray-400'
+                                                } ${previewText.startsWith('**') ? 'font-bold text-red-400' : ''}`}>
                                                 {previewText.replace(/\*\*/g, '')}
                                             </p>
-                                            {chat.unreadCount > 0 && (
-                                                <motion.span
-                                                    initial={{ scale: 0 }}
-                                                    animate={{ scale: 1 }}
-                                                    className="bg-red-500 text-white text-xs font-bold rounded-full px-2 py-1 min-w-[20px] text-center"
-                                                >
-                                                    {chat.unreadCount > 99 ? '99+' : chat.unreadCount}
-                                                </motion.span>
-                                            )}
                                         </div>
 
                                         {/* Post reference if exists */}
                                         {chat.posts && (
-                                            <div className="flex items-center space-x-2 mt-1">
-                                                <div className="w-4 h-4 bg-gray-700 rounded overflow-hidden flex-shrink-0">
-                                                    {chat.posts.image_url && (
-                                                        <Image
-                                                            src={chat.posts.image_url}
-                                                            alt=""
-                                                            width={16}
-                                                            height={16}
-                                                            className="w-full h-full object-cover"
-                                                        />
-                                                    )}
+                                            <div className="flex items-center space-x-2 mt-2">
+                                                <div className="w-3 h-3 bg-gray-600 rounded-full flex items-center justify-center flex-shrink-0">
+                                                    <div className="w-1.5 h-1.5 bg-red-400 rounded-full"></div>
                                                 </div>
                                                 <span className="text-xs text-gray-500 truncate">
                                                     {chat.posts.title}
@@ -220,10 +239,10 @@ export default function ChatList({ onChatSelect }: ChatListProps) {
                                     </div>
                                 </motion.div>
                             )
-                        })
-                    )}
-                </AnimatePresence>
-            </div>
+                        })}
+                    </div>
+                )}
+            </AnimatePresence>
         </div>
     )
 }

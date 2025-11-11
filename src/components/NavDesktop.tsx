@@ -4,54 +4,35 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useState, useEffect } from 'react'
+import { X } from 'lucide-react'
 import { getChatPreviews } from '@/lib/db'
 import { subscribeToChatUpdates } from '@/lib/realtime'
 import { useUser } from '@/hooks/useUser'
+import { useScrollHide } from '@/hooks/useScrollHide'
 
 import SellingToggle from './SellingToggle'
 
 export default function NavDesktop() {
     const pathname = usePathname()
     const { user } = useUser()
+    const hidden = useScrollHide(50) // Hide after 50px scroll
     const [sellingMode, setSellingMode] = useState<'Selling' | 'Requesting'>('Selling')
     const [activeCategory, setActiveCategory] = useState('All')
     const [searchTerm, setSearchTerm] = useState('')
     const [hasUnread, setHasUnread] = useState(false)
     const [isSearchActive, setIsSearchActive] = useState(false)
     const [isDesktop, setIsDesktop] = useState(false)
-    const [hidden, setHidden] = useState(false)
+    const [recentSearches, setRecentSearches] = useState<string[]>([])
 
-    // Check if desktop and handle scroll
+    // Check if desktop
     useEffect(() => {
-        let lastScrollY = 0
-
         const checkDesktop = () => {
-            const desktop = window.innerWidth >= 768
-            setIsDesktop(desktop)
-        }
-
-        const handleScroll = () => {
-            const currentScrollY = window.scrollY
-
-            if (Math.abs(currentScrollY - lastScrollY) < 10) return
-
-            if (currentScrollY > lastScrollY && currentScrollY > 80) {
-                setHidden(true)
-            } else {
-                setHidden(false)
-            }
-
-            lastScrollY = currentScrollY
+            setIsDesktop(window.innerWidth >= 768)
         }
 
         checkDesktop()
         window.addEventListener('resize', checkDesktop)
-        window.addEventListener('scroll', handleScroll, { passive: true })
-
-        return () => {
-            window.removeEventListener('resize', checkDesktop)
-            window.removeEventListener('scroll', handleScroll)
-        }
+        return () => window.removeEventListener('resize', checkDesktop)
     }, [])
 
     const navItems = [
@@ -78,6 +59,18 @@ export default function NavDesktop() {
         }
     }, [])
 
+    // Load recent searches from localStorage
+    useEffect(() => {
+        const saved = localStorage.getItem('recent-searches')
+        if (saved) {
+            try {
+                setRecentSearches(JSON.parse(saved))
+            } catch (error) {
+                console.error('Failed to parse recent searches:', error)
+            }
+        }
+    }, [])
+
     const handleModeChange = (mode: 'Selling' | 'Requesting') => {
         setSellingMode(mode)
         const modeValue = mode.toLowerCase() as 'selling' | 'requesting'
@@ -96,6 +89,24 @@ export default function NavDesktop() {
         setActiveCategory(category)
         // Dispatch category event
         window.dispatchEvent(new CustomEvent('feed-category-change', { detail: category }))
+    }
+
+    const handleSearchSubmit = (searchValue: string) => {
+        if (searchValue.trim()) {
+            // Add to recent searches
+            const updated = [searchValue.trim(), ...recentSearches.filter(s => s !== searchValue.trim())].slice(0, 5)
+            setRecentSearches(updated)
+            localStorage.setItem('recent-searches', JSON.stringify(updated))
+        }
+        handleSearchChange(searchValue)
+        setIsSearchActive(false)
+    }
+
+    const clearSearch = () => {
+        setSearchTerm('')
+        handleSearchChange('')
+        setRecentSearches([])
+        localStorage.removeItem('recent-searches')
     }
 
     // Check for unread messages
@@ -131,7 +142,14 @@ export default function NavDesktop() {
         <>
             {/* Mobile Navbar - Two-level layout */}
             {pathname !== '/' && (
-                <header className="block md:hidden fixed top-0 left-0 right-0 z-40 bg-black border-b border-gray-800 text-white">
+                <motion.header
+                    initial={{ y: 0 }}
+                    animate={{
+                        y: hidden ? -100 : 0,
+                        transition: { duration: 0.3, ease: 'easeOut' },
+                    }}
+                    className="block md:hidden fixed top-0 left-0 right-0 z-40 bg-black/80 backdrop-blur-md border-b border-white/20 text-white"
+                >
                     {/* First level: xChange (left) + Toggle (right) */}
                     <div className="flex items-center justify-between px-4 py-3">
                         <Link
@@ -152,15 +170,35 @@ export default function NavDesktop() {
                     {pathname === '/feed' && (
                         <div className="px-4 pb-3 relative">
                             {/* Search input */}
-                            <input
-                                type="text"
-                                placeholder="Search posts..."
-                                value={searchTerm}
-                                onChange={(e) => handleSearchChange(e.target.value)}
-                                onFocus={() => setIsSearchActive(true)}
-                                onBlur={() => setTimeout(() => setIsSearchActive(false), 200)}
-                                className="w-full bg-gray-800 text-gray-200 px-4 py-2 rounded-full focus:outline-none focus:ring-2 focus:ring-red-500 transition-all duration-300"
-                            />
+                            <motion.div
+                                animate={{ scaleX: isSearchActive ? 1.02 : 1 }}
+                                transition={{ duration: 0.2, ease: 'easeOut' }}
+                            >
+                                <div className="relative">
+                                    <input
+                                        type="text"
+                                        placeholder="Search posts..."
+                                        value={searchTerm}
+                                        onChange={(e) => handleSearchChange(e.target.value)}
+                                        onFocus={() => setIsSearchActive(true)}
+                                        onBlur={() => setTimeout(() => setIsSearchActive(false), 200)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                handleSearchSubmit(searchTerm)
+                                            }
+                                        }}
+                                        className="w-full bg-white/10 text-gray-200 px-4 py-2 pr-10 rounded-full focus:outline-none focus:ring-2 focus:ring-red-500 transition-all duration-300"
+                                    />
+                                    {searchTerm && (
+                                        <button
+                                            onClick={clearSearch}
+                                            className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
+                                        >
+                                            <X size={16} />
+                                        </button>
+                                    )}
+                                </div>
+                            </motion.div>
 
                             {/* Animated category bar on search focus */}
                             <AnimatePresence>
@@ -170,29 +208,31 @@ export default function NavDesktop() {
                                         animate={{ opacity: 1, y: 0 }}
                                         exit={{ opacity: 0, y: -10 }}
                                         transition={{ duration: 0.2 }}
-                                        className="flex overflow-x-auto no-scrollbar gap-2 mt-2 px-1 pb-1 bg-black/95 rounded-lg border border-gray-800"
+                                        className="flex overflow-x-auto no-scrollbar gap-2 mt-2 px-1 pb-1 bg-black/20 backdrop-blur-md rounded-lg border border-white/20"
                                     >
                                         {categories.map((cat) => (
-                                            <button
+                                            <motion.button
                                                 key={cat}
                                                 onClick={() => {
                                                     handleCategoryChange(cat)
                                                     setIsSearchActive(false)
                                                 }}
+                                                whileHover={{ scale: 1.05 }}
+                                                whileTap={{ scale: 0.95 }}
                                                 className={`flex-shrink-0 px-4 py-1 rounded-full text-sm border transition-all duration-200 ${activeCategory === cat
-                                                    ? 'bg-blue-600 text-white'
-                                                    : 'border-gray-700 text-gray-300 hover:bg-gray-800'
+                                                    ? 'bg-red-600 text-white border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.5)]'
+                                                    : 'border-white/20 text-gray-300 hover:bg-white/10 hover:border-red-500/30'
                                                     }`}
                                             >
                                                 {cat}
-                                            </button>
+                                            </motion.button>
                                         ))}
                                     </motion.div>
                                 )}
                             </AnimatePresence>
                         </div>
                     )}
-                </header>
+                </motion.header>
             )}
 
             {/* Desktop Navbar - Only visible on desktop */}
@@ -202,7 +242,7 @@ export default function NavDesktop() {
                     y: hidden && isDesktop ? -100 : 0,
                     transition: { duration: 0.3, ease: 'easeInOut' },
                 }}
-                className={`hidden md:flex sticky top-0 z-40 flex-col border-b border-gray-800 bg-black text-white transition-all duration-300 ${!hidden ? 'shadow-md shadow-black/50' : 'shadow-none'
+                className={`hidden md:flex sticky top-0 z-40 flex-col border-b border-white/20 bg-black/20 backdrop-blur-md text-white transition-all duration-300 ${!hidden ? 'shadow-lg shadow-black/30' : 'shadow-none'
                     }`}
             >
                 {/* Level 1: Top Navbar */}
@@ -220,7 +260,7 @@ export default function NavDesktop() {
                                 href={item.href}
                                 className={`px-4 py-2 rounded-full transition-all duration-300 relative ${isActive(item.href)
                                     ? 'bg-red-600 text-white'
-                                    : 'hover:bg-gray-800'
+                                    : 'hover:bg-white/10'
                                     }`}
                             >
                                 {item.label}
@@ -238,7 +278,7 @@ export default function NavDesktop() {
                         initial={{ opacity: 0, y: -10 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.25 }}
-                        className="flex items-center gap-4 px-6 py-3 border-t border-gray-800"
+                        className="flex items-center gap-4 px-6 py-3 border-t border-white/20"
                     >
                         {/* Selling Toggle */}
                         <SellingToggle
@@ -248,47 +288,100 @@ export default function NavDesktop() {
 
                         {/* Search Bar with Focus Categories */}
                         <div className="flex-1 ml-4">
-                            <div className="relative w-full">
+                            <motion.div
+                                className="relative w-full"
+                                animate={{ scaleX: isSearchActive ? 1.05 : 1 }}
+                                transition={{ duration: 0.2, ease: 'easeOut' }}
+                            >
                                 {/* Search input */}
-                                <input
-                                    type="text"
-                                    placeholder="Search posts..."
-                                    value={searchTerm}
-                                    onChange={(e) => handleSearchChange(e.target.value)}
-                                    onFocus={() => setIsSearchActive(true)}
-                                    onBlur={() => setTimeout(() => setIsSearchActive(false), 150)}
-                                    className="w-full bg-gray-800 text-gray-200 px-4 py-2 rounded-full focus:outline-none focus:ring-2 focus:ring-red-500 transition-all duration-300"
-                                />
+                                <div className="relative">
+                                    <input
+                                        type="text"
+                                        placeholder="Search posts..."
+                                        value={searchTerm}
+                                        onChange={(e) => handleSearchChange(e.target.value)}
+                                        onFocus={() => setIsSearchActive(true)}
+                                        onBlur={() => setTimeout(() => setIsSearchActive(false), 150)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                handleSearchSubmit(searchTerm)
+                                            }
+                                        }}
+                                        className="w-full bg-white/10 text-gray-200 px-4 py-2 pr-10 rounded-full focus:outline-none focus:ring-2 focus:ring-red-500 transition-all duration-300"
+                                    />
+                                    {searchTerm && (
+                                        <button
+                                            onClick={clearSearch}
+                                            className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
+                                        >
+                                            <X size={16} />
+                                        </button>
+                                    )}
+                                </div>
 
-                                {/* Category buttons (shown only when search active) */}
+                                {/* Search dropdown with recent searches and categories */}
                                 <AnimatePresence>
                                     {isSearchActive && (
                                         <motion.div
-                                            initial={{ opacity: 0, y: -5 }}
-                                            animate={{ opacity: 1, y: 0 }}
-                                            exit={{ opacity: 0, y: -5 }}
+                                            initial={{ opacity: 0, y: -5, scale: 0.95 }}
+                                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                                            exit={{ opacity: 0, y: -5, scale: 0.95 }}
                                             transition={{ duration: 0.15 }}
-                                            className="absolute left-0 right-0 mt-2 flex overflow-x-auto no-scrollbar gap-2 px-2 py-1 bg-black/90 rounded-lg border border-gray-800 z-20"
+                                            className="absolute left-0 right-0 mt-2 bg-black/90 backdrop-blur-md rounded-lg border border-white/20 z-20 shadow-xl"
                                         >
-                                            {categories.map((cat) => (
-                                                <button
-                                                    key={cat}
-                                                    onClick={() => {
-                                                        handleCategoryChange(cat)
-                                                        setIsSearchActive(false)
-                                                    }}
-                                                    className={`flex-shrink-0 px-4 py-1 rounded-full text-sm border transition-all duration-200 ${activeCategory === cat
-                                                        ? 'bg-blue-600 text-white'
-                                                        : 'border-gray-700 text-gray-300 hover:bg-gray-800'
-                                                        }`}
-                                                >
-                                                    {cat}
-                                                </button>
-                                            ))}
+                                            {/* Recent searches */}
+                                            {recentSearches.length > 0 && (
+                                                <div className="p-3 border-b border-white/10">
+                                                    <div className="flex items-center justify-between mb-2">
+                                                        <span className="text-xs text-gray-400 font-medium">Recent searches</span>
+                                                        <button
+                                                            onClick={clearSearch}
+                                                            className="text-xs text-red-400 hover:text-red-300 transition-colors"
+                                                        >
+                                                            Clear all
+                                                        </button>
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        {recentSearches.map((search, index) => (
+                                                            <button
+                                                                key={index}
+                                                                onClick={() => handleSearchSubmit(search)}
+                                                                className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-white/10 rounded-md transition-colors"
+                                                            >
+                                                                {search}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Category buttons */}
+                                            <div className="p-3">
+                                                <span className="text-xs text-gray-400 font-medium mb-2 block">Filter by category</span>
+                                                <div className="flex overflow-x-auto no-scrollbar gap-2">
+                                                    {categories.map((cat) => (
+                                                        <motion.button
+                                                            key={cat}
+                                                            onClick={() => {
+                                                                handleCategoryChange(cat)
+                                                                setIsSearchActive(false)
+                                                            }}
+                                                            whileHover={{ scale: 1.05 }}
+                                                            whileTap={{ scale: 0.95 }}
+                                                            className={`flex-shrink-0 px-4 py-1 rounded-full text-sm border transition-all duration-200 ${activeCategory === cat
+                                                                ? 'bg-red-600 text-white border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.5)]'
+                                                                : 'border-white/20 text-gray-300 hover:bg-white/10 hover:border-red-500/30'
+                                                                }`}
+                                                        >
+                                                            {cat}
+                                                        </motion.button>
+                                                    ))}
+                                                </div>
+                                            </div>
                                         </motion.div>
                                     )}
                                 </AnimatePresence>
-                            </div>
+                            </motion.div>
                         </div>
                     </motion.div>
                 )}

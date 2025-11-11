@@ -10,7 +10,7 @@ export default function SellingToggle({ sellingMode, setSellingMode }: Props) {
     const isSelling = sellingMode === 'Selling'
 
     return (
-        <div className="relative flex items-center justify-between bg-gray-900 rounded-full w-[240px] h-[44px] px-1 shadow-inner border border-gray-700">
+        <div className="relative flex items-center justify-between bg-black/20 backdrop-blur-md rounded-full w-[240px] h-[44px] px-1 shadow-inner border border-white/20">
             {/* Animated background */}
             <motion.div
                 layout

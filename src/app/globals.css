@@ -16,10 +16,14 @@
 
 html,
 body {
-  height: auto;
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background-color: #000;
   overflow-x: hidden;
   overflow-y: auto;
   /* allow natural scrolling */
+  overscroll-behavior: none;
 }
 
 /* Prevent mobile keyboard viewport issues */
@@ -76,4 +80,17 @@ body {
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+/* Glassmorphic utilities */
+.glassmorphic {
+  background: rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.glassmorphic-strong {
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(15px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
 }
