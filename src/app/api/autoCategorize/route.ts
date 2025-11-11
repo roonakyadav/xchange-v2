@@ -1,9 +1,8 @@
+import { NextRequest, NextResponse } from 'next/server'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '')
-
-export async function classifyCategory(title: string, description: string, apiKey?: string): Promise<string> {
-    const API_KEY = apiKey || process.env.GEMINI_API_KEY;
+async function classifyCategory(title: string, description: string): Promise<string> {
+    const API_KEY = process.env.GEMINI_API_KEY;
     const text = `${title} ${description}`.toLowerCase();
 
     console.log("🔍 [GEMINI] Classifying:", { title, description });
@@ -20,9 +19,6 @@ export async function classifyCategory(title: string, description: string, apiKe
         const genAIInstance = new GoogleGenerativeAI(API_KEY);
         const model = genAIInstance.getGenerativeModel({ model: "gemini-pro" });
 
-        const categories = ["All", "Subscription", "Templates", "Coupon Code", "Art", "Others"];
-        const input = `${title}. ${description}`;
-
         const prompt = `You are a classification AI for a digital marketplace.
 Based on the title and description below, choose **exactly one** of these categories:
 ["All", "Subscription", "Templates", "Coupon Code", "Art", "Others"].
@@ -32,7 +28,7 @@ Output only the category name — no punctuation or explanations.
 Title: "${title}"
 Description: "${description}"`;
 
-        console.log("📤 [GEMINI] Sending request with input:", input);
+        console.log("📤 [GEMINI] Sending request with input:", title, description);
 
         const result = await model.generateContent(prompt);
         const response = await result.response;
@@ -98,4 +94,22 @@ function keywordBasedClassification(text: string): string {
 
     console.log("✅ [KEYWORD] Classified as: Others");
     return 'Others';
+}
+
+export async function POST(request: NextRequest) {
+    try {
+        const { title, description } = await request.json()
+
+        if (!title || !description) {
+            return NextResponse.json({ error: 'Title and description are required' }, { status: 400 })
+        }
+
+        const category = await classifyCategory(title, description)
+
+        return NextResponse.json({ category })
+    } catch (error) {
+        console.error('Categorization error:', error)
+        // Fallback to Others on any error
+        return NextResponse.json({ category: 'Others' })
+    }
 }

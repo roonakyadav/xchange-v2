@@ -14,16 +14,17 @@
   --font-mono: var(--font-geist-mono);
 }
 
+/* Global scroll fix */
 html,
 body {
-  margin: 0;
-  padding: 0;
   height: 100%;
-  background-color: #000;
+  width: 100%;
+  overflow-y: auto !important;
+  /* Restore normal scroll everywhere */
   overflow-x: hidden;
-  overflow-y: auto;
-  /* allow natural scrolling */
-  overscroll-behavior: none;
+  background-color: #000;
+  color: #fff;
+  scroll-behavior: smooth;
 }
 
 /* Prevent mobile keyboard viewport issues */
@@ -31,6 +32,29 @@ input,
 textarea {
   font-size: 16px;
   /* prevent iOS zoom */
+}
+
+/* Mobile-specific scroll and input fixes */
+@supports (-webkit-touch-callout: none) {
+
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+    /* Prevent zooming on iOS */
+  }
+
+  html,
+  body {
+    height: 100%;
+    width: 100%;
+    overflow-y: auto !important;
+    overflow-x: hidden;
+    background-color: #000;
+    color: #fff;
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch;
+  }
 }
 
 body {
@@ -93,4 +117,48 @@ body {
   background: rgba(0, 0, 0, 0.4);
   backdrop-filter: blur(15px);
   border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+/* Custom dark red scrollbar (works for all pages) */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0a0a0a;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #111, #900);
+  border-radius: 10px;
+  transition: background 0.3s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #f00, #a00);
+  box-shadow: 0 0 6px rgba(255, 0, 0, 0.5);
+}
+
+/* For Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #900 #0a0a0a;
+}
+
+/* Chat scroll area only */
+#chat-scroll-area {
+  overflow-y: auto;
+  max-height: calc(100vh - 140px);
+  scrollbar-width: thin;
+  scrollbar-color: #900 #000;
+}
+
+#chat-scroll-area::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #700, #c00);
+}
+
+#chat-scroll-area::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #ff0000, #a00000);
+  box-shadow: 0 0 8px rgba(255, 0, 0, 0.6);
 }

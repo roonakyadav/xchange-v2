@@ -483,7 +483,9 @@ export default function Profile() {
                                                             }}
                                                             transition={{ type: 'spring', stiffness: 400, damping: 10 }}
                                                         >
-                                                            {post.price}
+                                                            {post.price?.toLowerCase() === "free"
+                                                                ? "Free"
+                                                                : `₹${Number(post.price).toLocaleString("en-IN")}`}
                                                         </motion.span>
                                                     )}
                                                 </div>
@@ -602,7 +604,9 @@ export default function Profile() {
                                                                 }}
                                                                 transition={{ type: 'spring', stiffness: 400, damping: 10 }}
                                                             >
-                                                                {savedPost.posts?.price}
+                                                                {savedPost.posts?.price?.toLowerCase() === "free"
+                                                                    ? "Free"
+                                                                    : `₹${Number(savedPost.posts?.price).toLocaleString("en-IN")}`}
                                                             </motion.span>
                                                         )}
                                                     </div>

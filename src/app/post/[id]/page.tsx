@@ -210,7 +210,9 @@ export default function PostDetail() {
                                 <span>@{post.users?.username || 'unknown'}</span>
                                 {post.price && (
                                     <span className="text-sm font-bold bg-emerald-600 text-white px-2 py-1 rounded-full">
-                                        {post.price}
+                                        {post.price?.toLowerCase() === "free"
+                                            ? "Free"
+                                            : `₹${Number(post.price).toLocaleString("en-IN")}`}
                                     </span>
                                 )}
                             </div>

@@ -64,17 +64,13 @@ export default function ChatThread({ chatId }: ChatThreadProps) {
 
     // Auto-scroll to bottom when new messages arrive
     useEffect(() => {
-        const container = document.querySelector('.chat-scroll')
+        const container = document.getElementById('chat-scroll-area')
         if (container) {
             container.scrollTop = container.scrollHeight
         }
     }, [messages])
 
-    // Add auto-scroll functionality using chat-scroll-container class
-    useEffect(() => {
-        const el = document.getElementById('chatScrollContainer')
-        if (el) el.scrollTop = el.scrollHeight
-    }, [messages])
+
 
     // Load chat
     useEffect(() => {
@@ -382,7 +378,10 @@ export default function ChatThread({ chatId }: ChatThreadProps) {
             </div>
 
             {/* Messages Area */}
-            <div id="chatScrollContainer" className="chat-scroll flex flex-col flex-1 overflow-y-auto px-6 py-4 space-y-3 scrollbar-none">
+            <div
+                id="chat-scroll-area"
+                className="flex-1 overflow-y-auto px-3 py-2 space-y-3 md:px-6 md:py-4 scroll-smooth"
+            >
                 {/* Messages */}
                 <AnimatePresence>
                     {messages.map((message) => {

@@ -332,21 +332,24 @@ export default function Feed() {
                                     onClick={() => router.push(`/post/${post.id}`)}
                                 >
                                     {/* AI Category Label */}
-                                    {post.category && post.category !== 'Others' && (
-                                        <motion.div
-                                            initial={{ opacity: 0, scale: 0.8 }}
-                                            animate={{ opacity: 1, scale: 1 }}
-                                            transition={{ delay: index * 0.1 + 0.2 }}
-                                            className={`absolute top-3 right-3 z-10 px-2 py-1 rounded-full text-xs font-medium backdrop-blur-md border ${post.category === 'Art' ? 'bg-pink-500/20 text-pink-300 border-pink-500/30' :
-                                                post.category === 'Subscription' ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30' :
-                                                    post.category === 'Coupon Code' ? 'bg-orange-500/20 text-orange-300 border-orange-500/30' :
-                                                        post.category === 'Templates' ? 'bg-purple-500/20 text-purple-300 border-purple-500/30' :
-                                                            'bg-gray-500/20 text-gray-300 border-gray-500/30'
-                                                }`}
-                                        >
-                                            AI: {post.category}
-                                        </motion.div>
-                                    )}
+                                    {(() => {
+                                        const categoryToDisplay = post.category || "Others";
+                                        return (
+                                            <motion.div
+                                                initial={{ opacity: 0, scale: 0.8 }}
+                                                animate={{ opacity: 1, scale: 1 }}
+                                                transition={{ delay: index * 0.1 + 0.2 }}
+                                                className={`absolute top-3 right-3 z-10 px-2 py-1 rounded-full text-xs font-medium backdrop-blur-md border ${categoryToDisplay === 'Art' ? 'bg-pink-500/20 text-pink-300 border-pink-500/30' :
+                                                    categoryToDisplay === 'Subscription' ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30' :
+                                                        categoryToDisplay === 'Coupon Code' ? 'bg-orange-500/20 text-orange-300 border-orange-500/30' :
+                                                            categoryToDisplay === 'Templates' ? 'bg-purple-500/20 text-purple-300 border-purple-500/30' :
+                                                                'bg-gray-500/20 text-gray-300 border-gray-500/30'
+                                                    }`}
+                                            >
+                                                AI: {categoryToDisplay}
+                                            </motion.div>
+                                        );
+                                    })()}
 
                                     <div className="relative w-full" style={{ paddingBottom: '100%' }}>
                                         <Image
@@ -523,7 +526,9 @@ export default function Feed() {
                                                     }}
                                                     transition={{ type: 'spring', stiffness: 400, damping: 10 }}
                                                 >
-                                                    {post.price}
+                                                    {post.price?.toLowerCase() === "free"
+                                                        ? "Free"
+                                                        : `₹${Number(post.price).toLocaleString("en-IN")}`}
                                                 </motion.span>
                                             )}
                                         </div>

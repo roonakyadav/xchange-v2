@@ -146,21 +146,8 @@ export default function PostMenu({ postId, imageUrl, username, currentUser, onPo
             {isOpen && (
                 <div className="absolute top-12 right-2 bg-gray-900 border border-gray-700 rounded-lg shadow-lg z-10 min-w-[160px]">
                     <div className="py-1">
-                        {/* Save/Unsave option for all users */}
-                        {user && (
-                            <button
-                                onClick={handleSaveToggle}
-                                className="w-full text-left px-4 py-2 text-sm text-white hover:bg-gray-800 transition-colors"
-                            >
-                                {isSaved ? 'Unsave post' : 'Save post'}
-                            </button>
-                        )}
-
-                        {/* Separator */}
-                        {user && <div className="border-t border-gray-700 my-1"></div>}
-
                         {isOwner ? (
-                            // Owner's menu: Edit, Share, Delete
+                            // Owner's menu: Edit, Share, Delete (no Save option)
                             <>
                                 <button
                                     onClick={(e) => {
@@ -191,8 +178,20 @@ export default function PostMenu({ postId, imageUrl, username, currentUser, onPo
                                 </button>
                             </>
                         ) : (
-                            // Other user's menu: Share, Report
+                            // Other user's menu: Save, Share, Report
                             <>
+                                {user && (
+                                    <>
+                                        <button
+                                            onClick={handleSaveToggle}
+                                            className="w-full text-left px-4 py-2 text-sm text-white hover:bg-gray-800 transition-colors"
+                                        >
+                                            {isSaved ? 'Unsave post' : 'Save post'}
+                                        </button>
+                                        {/* Separator */}
+                                        <div className="border-t border-gray-700 my-1"></div>
+                                    </>
+                                )}
                                 <button
                                     onClick={handleShare}
                                     className="w-full text-left px-4 py-2 text-sm text-white hover:bg-gray-800 transition-colors"

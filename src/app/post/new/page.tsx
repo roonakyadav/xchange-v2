@@ -12,7 +12,7 @@ import { Camera } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { type PostInputRaw } from '@/lib/validators'
 import { useUser } from '@/hooks/useUser'
-import { classifyCategory } from '../../../../@Integrations/geminiClient'
+
 
 export default function NewPost() {
     // All hooks must be called at the top level, in the same order every time
@@ -25,11 +25,14 @@ export default function NewPost() {
     const [uploadProgress, setUploadProgress] = useState(0)
     const [isUploading, setIsUploading] = useState(false)
     const [toggleMode, setToggleMode] = useState<'Selling' | 'Requesting'>('Selling')
-    const [formattedPrice, setFormattedPrice] = useState('')
+    const [price, setPrice] = useState('')
     const [selectedTags, setSelectedTags] = useState<string[]>([])
     const [tagInput, setTagInput] = useState('')
     const [showTagSuggestions, setShowTagSuggestions] = useState(false)
+    const [generatingDescription, setGeneratingDescription] = useState(false)
+    const [highlightDescription, setHighlightDescription] = useState(false)
     const fileInputRef = useRef<HTMLInputElement>(null)
+    const titleInputRef = useRef<HTMLInputElement>(null)
 
     // Form hook - called unconditionally
     const {
@@ -49,42 +52,9 @@ export default function NewPost() {
     // Watch values - called unconditionally
     const image = watch('image')
     const mode = watch('mode')
+    const description = watch('description')
 
-    // Callback hooks - all called unconditionally
-    const formatPrice = useCallback((value: string) => {
-        // Remove all non-numeric characters except decimal point
-        const numericValue = value.replace(/[^\d.]/g, '')
 
-        if (!numericValue) return ''
-
-        // Parse as number
-        const numValue = parseFloat(numericValue)
-
-        if (isNaN(numValue)) return ''
-
-        // Format with commas for thousands
-        const formatted = numValue.toLocaleString('en-US', {
-            minimumFractionDigits: 0,
-            maximumFractionDigits: 2
-        })
-
-        // Auto-detect currency symbol from input
-        const currencyMatch = value.match(/[₹$€£¥]/)
-        const currencySymbol = currencyMatch ? currencyMatch[0] : '$'
-
-        // Determine if symbol should be prefix or suffix
-        const hasSymbolAtStart = /^[₹$€£¥]/.test(value.trim())
-        const hasSymbolAtEnd = /[₹$€£¥]$/.test(value.trim())
-
-        if (hasSymbolAtStart) {
-            return `${currencySymbol}${formatted}`
-        } else if (hasSymbolAtEnd) {
-            return `${formatted}${currencySymbol}`
-        } else {
-            // Default to prefix
-            return `${currencySymbol}${formatted}`
-        }
-    }, [])
 
     // Effect hooks - all called unconditionally
     useEffect(() => {
@@ -100,6 +70,15 @@ export default function NewPost() {
     useEffect(() => {
         setToggleMode(mode === 'selling' ? 'Selling' : 'Requesting')
     }, [mode])
+
+    // Scroll into view when title input is focused (mobile keyboard fix)
+    useEffect(() => {
+        const el = titleInputRef.current;
+        if (!el) return;
+        const handleFocus = () => el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.addEventListener('focus', handleFocus);
+        return () => el.removeEventListener('focus', handleFocus);
+    }, [])
 
     // Early returns come AFTER all hooks are called
     if (userLoading) {
@@ -139,10 +118,13 @@ export default function NewPost() {
 
     // Handle price input change
     const handlePriceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const rawValue = e.target.value
-        const formatted = formatPrice(rawValue)
-        setFormattedPrice(formatted)
-        setValue('price', formatted)
+        const rawValue = e.target.value.replace(/[^\d]/g, '') // only digits
+        if (rawValue) {
+            setPrice(`₹${rawValue}`)
+        } else {
+            setPrice('')
+        }
+        setValue('price', rawValue ? `₹${rawValue}` : '')
     }
 
     // Popular tags suggestions
@@ -195,6 +177,40 @@ export default function NewPost() {
         }
     }
 
+    // Handle AI description generation
+    const handleGenerateDescription = async () => {
+        if (!watch('title') || !imagePreview) return
+
+        setGeneratingDescription(true)
+        try {
+            const response = await fetch('/api/generateDescription', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    title: watch('title'),
+                    imageUrl: imagePreview,
+                }),
+            })
+
+            if (!response.ok) {
+                throw new Error('Failed to generate description')
+            }
+
+            const data = await response.json()
+            setValue('description', data.aiDescription, { shouldDirty: true, shouldTouch: true })
+            setHighlightDescription(true)
+            setTimeout(() => setHighlightDescription(false), 2000) // Remove highlight after 2 seconds
+            toast.success('Description generated successfully!')
+        } catch (error) {
+            console.error('Error generating description:', error)
+            toast.error('Failed to generate description. Please try again.')
+        } finally {
+            setGeneratingDescription(false)
+        }
+    }
+
     const onSubmit = async (rawData: PostInputRaw) => {
         if (!user) {
             router.push('/auth')
@@ -211,12 +227,8 @@ export default function NewPost() {
             return
         }
 
-        // Normalize price format while preserving user's symbol choice
-        const normalizedPrice = priceValue.trim()
-
-        // If it's prefix format (symbol first), keep as is
-        // If it's suffix format (symbol last), keep as is
-        // The regex ensures it's one or the other
+        // Strip ₹ symbol for database storage
+        const numericPrice = priceValue.replace(/[₹,]/g, "")
 
         setLoading(true)
         setIsUploading(true)
@@ -256,10 +268,20 @@ export default function NewPost() {
                 ? rawData.tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0)
                 : []
 
-            // Classify category using Gemini AI
+            // Classify category using OpenAI API
             console.log("🏷️ [POST_CREATION] Starting category classification for:", rawData.title);
-            console.log("🔧 [POST_CREATION] Environment check - GEMINI_API_KEY:", !!process.env.GEMINI_API_KEY);
-            const category = await classifyCategory(rawData.title, rawData.description);
+            const response = await fetch('/api/autoCategorize', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    title: rawData.title,
+                    description: rawData.description,
+                }),
+            });
+            const data = await response.json();
+            const category = data.category;
             console.log("🏷️ [POST_CREATION] Category classified as:", category);
 
             // Create post
@@ -269,7 +291,7 @@ export default function NewPost() {
                 image_url: publicUrl,
                 username: user.username,
                 mode: rawData.mode,
-                price: normalizedPrice,
+                price: numericPrice,
                 tags: tags,
                 category: category,
             });
@@ -310,7 +332,7 @@ export default function NewPost() {
             </div>
 
             {/* Mobile Layout */}
-            <div className="flex flex-col w-full h-full overflow-y-auto px-4 py-4 space-y-4 md:space-y-6 md:px-12 md:py-6 md:hidden">
+            <div className="min-h-screen overflow-y-auto pb-32 px-4 md:hidden">
                 {/* Photo Upload */}
                 <motion.div
                     initial={{ opacity: 0, y: 10 }}
@@ -381,9 +403,15 @@ export default function NewPost() {
                     <label className="block text-gray-400 text-sm font-medium mb-2">Title *</label>
                     <input
                         {...register('title')}
+                        ref={titleInputRef}
                         type="text"
-                        className="w-full bg-[#141414] text-gray-100 placeholder-gray-500 rounded-xl p-3 text-sm focus:outline-none focus:ring-1 focus:ring-red-500"
-                        placeholder="What are you selling?"
+                        placeholder="Enter title..."
+                        value={watch('title') || ''}
+                        onChange={(e) => setValue('title', e.target.value)}
+                        className="w-full bg-gray-900 text-white placeholder-gray-500 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-red-500"
+                        inputMode="text"
+                        autoComplete="off"
+                        autoCorrect="off"
                     />
                     {errors.title && (
                         <p className="text-red-500 text-sm mt-1">{errors.title.message}</p>
@@ -397,14 +425,34 @@ export default function NewPost() {
                     transition={{ duration: 0.25, delay: 0.3 }}
                 >
                     <label className="block text-gray-400 text-sm font-medium mb-2">Description *</label>
-                    <textarea
-                        {...register('description')}
+                    <motion.textarea
+                        value={description || ''}
+                        onChange={(e) => setValue('description', e.target.value)}
                         rows={4}
                         className="w-full bg-[#141414] text-gray-100 placeholder-gray-500 rounded-xl p-3 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-red-500"
                         placeholder="Describe your item..."
+                        animate={highlightDescription ? {
+                            boxShadow: "0 0 0 2px rgba(239, 68, 68, 0.5)",
+                            scale: [1, 1.02, 1]
+                        } : {}}
+                        transition={{ duration: 0.3 }}
                     />
                     {errors.description && (
                         <p className="text-red-500 text-sm mt-1">{errors.description.message}</p>
+                    )}
+
+                    {/* AI Description Generator */}
+                    {watch('title') && imagePreview && (
+                        <motion.button
+                            initial={{ opacity: 0, y: 5 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            onClick={handleGenerateDescription}
+                            disabled={generatingDescription}
+                            className="flex items-center gap-2 mt-2 text-sm text-gray-300 hover:text-red-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            <span className="text-lg">✨</span>
+                            {generatingDescription ? 'Generating description...' : 'Write with AI'}
+                        </motion.button>
                     )}
                 </motion.div>
 
@@ -418,10 +466,11 @@ export default function NewPost() {
                     <input
                         {...register('price')}
                         type="text"
-                        value={formattedPrice}
+                        value={price}
                         onChange={handlePriceChange}
+                        inputMode="decimal"
                         className="w-full bg-[#141414] text-gray-100 placeholder-gray-500 rounded-xl p-3 text-sm focus:outline-none focus:ring-1 focus:ring-red-500"
-                        placeholder="Price (e.g. $200 or 200$)"
+                        placeholder="Enter value in rupees"
                     />
                     {errors.price && (
                         <p className="text-red-500 text-sm mt-1">{errors.price.message}</p>
@@ -600,10 +649,11 @@ export default function NewPost() {
                                         <input
                                             {...register('price')}
                                             type="text"
-                                            value={formattedPrice}
+                                            value={price}
                                             onChange={handlePriceChange}
+                                            inputMode="decimal"
                                             className="w-full h-12 px-4 py-3 bg-[#111] border border-gray-700 rounded-xl focus:outline-none focus:border-red-400 focus:ring-2 focus:ring-red-400/20 transition-all duration-200 text-gray-200 placeholder-gray-500"
-                                            placeholder="Price (e.g. $200 or 200$)"
+                                            placeholder="Enter value in rupees"
                                         />
                                         {errors.price && (
                                             <p className="text-red-500 text-sm mt-1">{errors.price.message}</p>
@@ -733,14 +783,33 @@ export default function NewPost() {
                                     >
                                         <label className="block text-gray-400 text-sm font-medium mb-2">Description *</label>
                                         <motion.textarea
-                                            {...register('description')}
+                                            value={description || ''}
+                                            onChange={(e) => setValue('description', e.target.value)}
                                             className="w-full h-[124px] px-4 py-3 bg-[#111] border border-gray-700 rounded-xl focus:outline-none focus:border-red-400 focus:shadow-[0_0_6px_rgba(255,0,80,0.2)] transition-all duration-200 resize-none text-gray-200 placeholder-gray-500"
                                             placeholder="Describe your item..."
+                                            animate={highlightDescription ? {
+                                                boxShadow: "0 0 0 2px rgba(239, 68, 68, 0.5)",
+                                                scale: [1, 1.02, 1]
+                                            } : {}}
+                                            transition={{ duration: 0.3 }}
                                             whileFocus={{ scale: 1.01 }}
-                                            transition={{ duration: 0.2 }}
                                         />
                                         {errors.description && (
                                             <p className="text-red-500 text-sm mt-1">{errors.description.message}</p>
+                                        )}
+
+                                        {/* AI Description Generator */}
+                                        {watch('title') && imagePreview && (
+                                            <motion.button
+                                                initial={{ opacity: 0, y: 5 }}
+                                                animate={{ opacity: 1, y: 0 }}
+                                                onClick={handleGenerateDescription}
+                                                disabled={generatingDescription}
+                                                className="flex items-center gap-2 mt-2 text-sm text-gray-300 hover:text-red-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                            >
+                                                <span className="text-lg">✨</span>
+                                                {generatingDescription ? 'Generating description...' : 'Write with AI'}
+                                            </motion.button>
                                         )}
                                     </motion.div>
                                 </div>
